@@ -11,3 +11,5 @@ dados <- read.csv("participantes.csv", sep = ";", header = TRUE)
 knitr::kable(dados)
 
 ```
+
+[Link de volta pro site da disciplina](https://cammcordeiro.github.io/ciencia_colab/index.html)
