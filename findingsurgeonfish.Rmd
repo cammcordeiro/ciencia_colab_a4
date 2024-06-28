@@ -1,0 +1,175 @@
+---
+title: "Atividade4"
+author: "Bruna"
+date: "2024-06-06"
+output: html_document
+---
+
+#Finding surgeon fish
+
+Acessar dados da espécie 'Acanthurus chirurgus' nos repositórios de biodiversidade GBIF e OBIS.
+
+```{r Baixar, checar e validar dados do GBIF}
+library(tidyverse)
+library(rgbif)
+
+dados <- rgbif::occ_data(scientificName = "Acanthurus chirurgus", hasCoordinate = TRUE)
+
+head(dados$data)
+
+??occ_data
+
+dados <- occ_data(scientificName = "Acanthurus chirurgus", hasCoordinate = TRUE)
+
+cirurgiao_gbif <- occ_data(scientificName = "Acanthurus chirurgus", 
+                      hasCoordinate = TRUE,
+                      hasGeospatialIssue=FALSE)
+
+dim(cirurgiao_gbif)
+
+dim(cirurgiao_gbif$data)
+
+cirurgiao_gbif$data %>% names
+
+library(dplyr)
+library(rgbif)
+
+issues <- gbif_issues()
+
+str(issues)
+
+issues_df <- data.frame(issues)
+
+print(names(issues_df))
+
+issues_gbif <- cirurgiao_gbif$data$issues %>% 
+  unique() %>% 
+  strsplit(., "[,]") %>% 
+  unlist()
+
+gbif_issues() %>% 
+  data.frame() %>% 
+  filter(code %in% issues_gbif)
+
+cirurgiao_gbif1 <- cirurgiao_gbif$data %>%
+  dplyr::select(scientificName, acceptedScientificName, decimalLatitude, decimalLongitude,
+                issues, waterBody, basisOfRecord, occurrenceStatus, rightsHolder, 
+                datasetName, recordedBy, depth, locality, habitat) 
+
+cirurgiao_gbif1 <- cirurgiao_gbif1 %>% 
+  distinct() 
+
+lapply(cirurgiao_gbif1, unique)
+
+cirurgiao_gbif1 %>% 
+  filter(waterBody %in% c("")) %>% 
+  distinct(datasetName)
+```
+
+
+```{r Gerar mapa de ocorrências e gráfico para checar profundidade:}
+library(ggmap)
+library(maps)
+library(mapdata)
+
+world <- map_data('world')
+
+ggplot() +
+  geom_polygon(data = world, aes(x = long, y = lat, group = group)) +
+  coord_fixed() +
+  theme_classic() +
+  geom_point(data = cirurgiao_gbif1, aes(x = decimalLongitude, y = decimalLatitude), color = "red") +
+  labs(x = "longitude", y = "latitude", title = expression(italic("Acanthurus chirurgus")))
+
+cirurgiao_gbif1 %>% 
+  ggplot(aes(x = depth, fill = waterBody)) +
+  geom_histogram() 
+```
+
+
+Agora os mesmos passos para o OBIS, repositório de espécies marinhas:
+
+```{r Acessar, checar e validar dados de Acanthurus chirurgus do OBIS}
+library(robis)
+
+cirurgiao_obis <- robis::occurrence("Acanthurus chirurgus")
+
+names(cirurgiao_obis)
+
+cirurgiao_obis1 <- cirurgiao_obis %>% 
+  dplyr::select(scientificName, decimalLatitude, decimalLongitude, bathymetry,
+                flags, waterBody, basisOfRecord, occurrenceStatus, rightsHolder, 
+                datasetName, recordedBy, depth, locality, habitat) %>% 
+  distinct()
+
+cirurgiao_obis1 %>% 
+  distinct(flags)
+
+cirurgiao_obis1 %>% 
+  filter(!flags %in% c("no_depth,on_land", "on_land", "on_land,depth_exceeds_bath", "depth_exceeds_bath,on_land"),
+         is.na(datasetName)) %>% 
+  distinct(waterBody)
+
+cirurgiao_obis1 %>% 
+  filter(!flags %in% c("no_depth,on_land", "on_land", "on_land,depth_exceeds_bath", "depth_exceeds_bath,on_land"),
+         !is.na(datasetName),
+         !waterBody %in% c("Mar Caribe", "atlantique", "South Atlantic", "Atlantic Ocean", "Caribe", "Bahia de La Habana", "WESTERN ATLANTIC", "Gulf of Mexico", "CARIB")) %>% 
+  ggplot(aes(x = depth, fill = waterBody)) +
+  geom_histogram() 
+
+cirurgiao_obis1 %>% 
+  filter(!flags %in% c("no_depth,on_land", "on_land", "on_land,depth_exceeds_bath", "depth_exceeds_bath,on_land"),
+         !is.na(datasetName),
+         !waterBody %in% c("North America", "North America Atlantic", "atlantique")) %>% 
+  lapply(., unique)
+
+cirurgiao_obis_ok <- cirurgiao_obis1 %>% 
+  filter(!flags %in% c("no_depth,on_land", "on_land", "on_land,depth_exceeds_bath", "depth_exceeds_bath,on_land"),
+         !is.na(datasetName),
+         !waterBody %in% c("North America", "North America Atlantic", "atlantique", NA))
+```
+
+```{r Gerar mapa de ocorrências no OBIS}
+ggplot() +
+  geom_polygon(data = world, aes(x = long, y = lat, group = group)) +
+  coord_fixed() +
+  theme_classic() +
+  geom_point(data = cirurgiao_obis_ok, aes(x = decimalLongitude, y = decimalLatitude, color = waterBody)) +
+  labs(x = "longitude", y = "latitude", title = expression(italic("Acanthurus chirurgus")))
+```
+
+Comparar os dados encontrados em ambos os repositórios:
+```{r Checar diferenças}
+setdiff(names(cirurgiao_obis1), names(cirurgiao_gbif1))
+
+library(tidyr)
+library(tibble)
+
+all_data <- bind_rows(cirurgiao_gbif1 %>% 
+                        mutate(repo = paste0("gbif", row.names(.))), 
+                      cirurgiao_obis_ok %>% 
+                        mutate(repo = paste0("obis", row.names(.)))) %>%
+  column_to_rownames("repo") %>% 
+  dplyr::select(decimalLongitude, decimalLatitude, depth) %>% 
+  distinct() %>% 
+  rownames_to_column("occ") %>% 
+  separate(col = "occ", into = c("datasetName", "rn"), sep = 4) %>%
+  mutate(scientificName = "Acanthurus chirurgus") %>% 
+  dplyr::select(-rn)
+```
+
+```{r Gerar mapa}
+ggplot() +
+  geom_polygon(data = world, aes(x = long, y = lat, group = group)) +
+  coord_fixed() +
+  theme_classic() +
+  geom_point(data = all_data, aes(x = decimalLongitude, y = decimalLatitude, color = datasetName)) +
+  #theme(legend.title = element_blank()) +
+  labs(x = "longitude", y = "latitude", title = expression(italic("Achanthurus chirurgus")))
+```
+
+```{r Criar arquivo com todos os dados}
+dir.create("data")
+write.csv(all_data, "data/occ_GBIF-OBIS_aca_chir.csv", row.names = FALSE)
+```
+
